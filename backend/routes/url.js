@@ -144,15 +144,23 @@ router.get("/:shortId", async (req, res) => {
       return res.status(404).send("Short URL not found");
     }
 
-    // 🔥 DEFENSIVE FIX (handles old bad DB data)
     let redirectUrl = url.originalUrl;
 
-    // If somehow stored as array
+    // HARD SAFETY CHECKS
+    if (!redirectUrl) {
+      return res.status(400).send("Invalid original URL");
+    }
+
+    // If somehow stored wrongly (array / object)
     if (Array.isArray(redirectUrl)) {
       redirectUrl = redirectUrl[0];
     }
 
     redirectUrl = String(redirectUrl).trim();
+
+    if (redirectUrl.length === 0) {
+      return res.status(400).send("Invalid original URL");
+    }
 
     // Ensure protocol
     if (
@@ -171,5 +179,6 @@ router.get("/:shortId", async (req, res) => {
     return res.status(500).send("Server error");
   }
 });
+
 
 export default router;
