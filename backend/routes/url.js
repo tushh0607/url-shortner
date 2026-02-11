@@ -103,22 +103,38 @@ const router = express.Router();
  */
 router.post("/shorten", async (req, res) => {
   try {
-    const { originalUrl } = req.body;
+    let { originalUrl } = req.body;
 
     if (!originalUrl) {
       return res.status(400).json({ error: "URL is required" });
     }
 
-    let shortId;
-    let exists = true;
+    originalUrl = String(originalUrl).trim();
 
-    while (exists) {
+    // Add protocol if missing
+    if (
+      !originalUrl.startsWith("http://") &&
+      !originalUrl.startsWith("https://")
+    ) {
+      originalUrl = "https://" + originalUrl;
+    }
+
+    // FINAL validation (this prevents bad DB data forever)
+    try {
+      new URL(originalUrl);
+    } catch {
+      return res.status(400).json({ error: "Invalid URL" });
+    }
+
+    let shortId;
+    while (true) {
       shortId = nanoid(7);
-      exists = await Url.findOne({ shortId });
+      const exists = await Url.findOne({ shortId });
+      if (!exists) break;
     }
 
     const url = await Url.create({
-      originalUrl: String(originalUrl).trim(),
+      originalUrl,
       shortId,
     });
 
@@ -127,50 +143,32 @@ router.post("/shorten", async (req, res) => {
       shortUrl: `${process.env.BASE_URL}/${url.shortId}`,
     });
   } catch (err) {
-    console.error("CREATE ERROR:", err);
+    console.error("SHORTEN ERROR:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 
 /**
  * REDIRECT SHORT URL
  */
 router.get("/:shortId", async (req, res) => {
   try {
-    const { shortId } = req.params;
-
-    const urlDoc = await Url.findOne({ shortId });
-    if (!urlDoc) {
-      return res.status(404).send("Short URL not found");
+    const url = await Url.findOne({ shortId: req.params.shortId });
+    if (!url) {
+      return res.status(404).send("Not found");
     }
 
-    let redirectUrl = urlDoc.originalUrl;
+    url.clicks += 1;
+    await url.save();
 
-    // Convert to string & trim
-    redirectUrl = String(redirectUrl).trim();
-
-    // Add protocol if missing
-    if (!redirectUrl.startsWith("http://") && !redirectUrl.startsWith("https://")) {
-      redirectUrl = "https://" + redirectUrl;
-    }
-
-    // FINAL validation (THIS IS THE KEY)
-    try {
-      new URL(redirectUrl);
-    } catch (e) {
-      console.error("INVALID URL IN DB:", redirectUrl);
-      return res.status(400).send("Invalid URL stored");
-    }
-
-    urlDoc.clicks += 1;
-    await urlDoc.save();
-
-    return res.redirect(redirectUrl);
+    return res.redirect(url.originalUrl);
   } catch (err) {
-    console.error("REDIRECT FAILED:", err);
+    console.error("REDIRECT ERROR:", err);
     return res.status(500).send("Server error");
   }
 });
+
 
 
 
