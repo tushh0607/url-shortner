@@ -44,21 +44,51 @@ router.post("/shorten", async (req, res) => {
 });
 
 // REDIRECT SHORT URL
+// router.get("/:shortId", async (req, res) => {
+//   try {
+//     const { shortId } = req.params;
+
+//     const url = await Url.findOne({ shortId });
+//     if (!url) return res.status(404).json({ error: "Not found" });
+
+//     url.clicks++;
+//     await url.save();
+
+//     res.redirect(url.originalUrl);
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ error: "Server error" });
+//   }
+// });
+
 router.get("/:shortId", async (req, res) => {
   try {
     const { shortId } = req.params;
 
     const url = await Url.findOne({ shortId });
-    if (!url) return res.status(404).json({ error: "Not found" });
+    if (!url) {
+      return res.status(404).send("Short URL not found");
+    }
 
-    url.clicks++;
+    let redirectUrl = url.originalUrl.trim();
+
+    // Ensure proper protocol
+    if (
+      !redirectUrl.startsWith("http://") &&
+      !redirectUrl.startsWith("https://")
+    ) {
+      redirectUrl = "https://" + redirectUrl;
+    }
+
+    url.clicks += 1;
     await url.save();
 
-    res.redirect(url.originalUrl);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: "Server error" });
+    return res.redirect(redirectUrl);
+  } catch (err) {
+    console.error("REDIRECT ERROR:", err);
+    return res.status(500).send("Server error");
   }
 });
+
 
 export default router;
