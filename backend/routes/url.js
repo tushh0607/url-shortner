@@ -139,46 +139,39 @@ router.get("/:shortId", async (req, res) => {
   try {
     const { shortId } = req.params;
 
-    const url = await Url.findOne({ shortId });
-    if (!url) {
+    const urlDoc = await Url.findOne({ shortId });
+    if (!urlDoc) {
       return res.status(404).send("Short URL not found");
     }
 
-    let redirectUrl = url.originalUrl;
+    let redirectUrl = urlDoc.originalUrl;
 
-    // HARD SAFETY CHECKS
-    if (!redirectUrl) {
-      return res.status(400).send("Invalid original URL");
-    }
-
-    // If somehow stored wrongly (array / object)
-    if (Array.isArray(redirectUrl)) {
-      redirectUrl = redirectUrl[0];
-    }
-
+    // Convert to string & trim
     redirectUrl = String(redirectUrl).trim();
 
-    if (redirectUrl.length === 0) {
-      return res.status(400).send("Invalid original URL");
-    }
-
-    // Ensure protocol
-    if (
-      !redirectUrl.startsWith("http://") &&
-      !redirectUrl.startsWith("https://")
-    ) {
+    // Add protocol if missing
+    if (!redirectUrl.startsWith("http://") && !redirectUrl.startsWith("https://")) {
       redirectUrl = "https://" + redirectUrl;
     }
 
-    url.clicks += 1;
-    await url.save();
+    // FINAL validation (THIS IS THE KEY)
+    try {
+      new URL(redirectUrl);
+    } catch (e) {
+      console.error("INVALID URL IN DB:", redirectUrl);
+      return res.status(400).send("Invalid URL stored");
+    }
+
+    urlDoc.clicks += 1;
+    await urlDoc.save();
 
     return res.redirect(redirectUrl);
   } catch (err) {
-    console.error("REDIRECT ERROR:", err);
+    console.error("REDIRECT FAILED:", err);
     return res.status(500).send("Server error");
   }
 });
+
 
 
 export default router;
