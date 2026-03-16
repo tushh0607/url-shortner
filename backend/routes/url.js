@@ -1,125 +1,20 @@
-// import express from "express";
-// import Url from "../model/url.js";
-// import { nanoid } from "nanoid";
-
-// const router = express.Router();
-
-// // CREATE SHORT URL
-// router.post("/shorten", async (req, res) => {
-//   try {
-//     const { originalUrl } = req.body;
-
-//     if (!originalUrl) {
-//       return res.status(400).json({ error: "URL is required" });
-//     }
-
-//     // Validate URL
-//     try {
-//       new URL(originalUrl);
-//     } catch {
-//       return res.status(400).json({ error: "Invalid URL" });
-//     }
-
-//     let shortId;
-//     let exists = true;
-
-//     while (exists) {
-//       shortId = nanoid(7);
-//       exists = await Url.findOne({ shortId });
-//     }
-
-//     const url = await Url.create({
-//       originalUrl,
-//       shortId,
-//     });
-
-//     res.json({
-//       shortId: url.shortId,
-//       shortUrl: `${process.env.BASE_URL}/${url.shortId}`,
-//     });
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ error: "Server error" });
-//   }
-// });
-
-// // REDIRECT SHORT URL
-// // router.get("/:shortId", async (req, res) => {
-// //   try {
-// //     const { shortId } = req.params;
-
-// //     const url = await Url.findOne({ shortId });
-// //     if (!url) return res.status(404).json({ error: "Not found" });
-
-// //     url.clicks++;
-// //     await url.save();
-
-// //     res.redirect(url.originalUrl);
-// //   } catch (error) {
-// //     console.error(error);
-// //     res.status(500).json({ error: "Server error" });
-// //   }
-// // });
-
-// router.get("/:shortId", async (req, res) => {
-//   try {
-//     const { shortId } = req.params;
-
-//     const url = await Url.findOne({ shortId });
-//     if (!url) {
-//       return res.status(404).send("Short URL not found");
-//     }
-
-//     let redirectUrl = url.originalUrl.trim();
-
-//     // Ensure proper protocol
-//     if (
-//       !redirectUrl.startsWith("http://") &&
-//       !redirectUrl.startsWith("https://")
-//     ) {
-//       redirectUrl = "https://" + redirectUrl;
-//     }
-
-//     url.clicks += 1;
-//     await url.save();
-
-//     return res.redirect(redirectUrl);
-//   } catch (err) {
-//     console.error("REDIRECT ERROR:", err);
-//     return res.status(500).send("Server error");
-//   }
-// });
-
-
-// export default router;
 import express from "express";
 import Url from "../model/url.js";
 import { nanoid } from "nanoid";
+import { protect } from "../middleware/auth.js";
 
 const router = express.Router();
 
-/**
- * CREATE SHORT URL
- */
-router.post("/shorten", async (req, res) => {
+// CREATE SHORT URL (PROTECTED)
+router.post("/shorten", protect, async (req, res) => {
   try {
-    let { originalUrl } = req.body;
+    const { originalUrl } = req.body;
 
     if (!originalUrl) {
       return res.status(400).json({ error: "URL is required" });
     }
 
-    originalUrl = String(originalUrl).trim();
-
-    // Add protocol if missing
-    if (
-      !originalUrl.startsWith("http://") &&
-      !originalUrl.startsWith("https://")
-    ) {
-      originalUrl = "https://" + originalUrl;
-    }
-
-    // FINAL validation (this prevents bad DB data forever)
+    // Validate URL
     try {
       new URL(originalUrl);
     } catch {
@@ -127,49 +22,94 @@ router.post("/shorten", async (req, res) => {
     }
 
     let shortId;
-    while (true) {
+    let exists = true;
+
+    while (exists) {
       shortId = nanoid(7);
-      const exists = await Url.findOne({ shortId });
-      if (!exists) break;
+      exists = await Url.findOne({ shortId });
     }
 
     const url = await Url.create({
       originalUrl,
       shortId,
+      userId: req.user._id,
     });
 
     res.json({
+      _id: url._id,
       shortId: url.shortId,
       shortUrl: `${process.env.BASE_URL}/${url.shortId}`,
+      originalUrl: url.originalUrl,
+      clicks: url.clicks,
+      createdAt: url.createdAt,
     });
-  } catch (err) {
-    console.error("SHORTEN ERROR:", err);
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-
-/**
- * REDIRECT SHORT URL
- */
-router.get("/:shortId", async (req, res) => {
+// GET ALL URLS FOR LOGGED IN USER (PROTECTED)
+router.get("/my-urls", protect, async (req, res) => {
   try {
-    const url = await Url.findOne({ shortId: req.params.shortId });
-    if (!url) {
-      return res.status(404).send("Not found");
-    }
+    const urls = await Url.find({ userId: req.user._id }).sort({
+      createdAt: -1,
+    });
 
-    url.clicks += 1;
-    await url.save();
+    const urlsWithShortUrl = urls.map((url) => ({
+      _id: url._id,
+      originalUrl: url.originalUrl,
+      shortId: url.shortId,
+      shortUrl: `${process.env.BASE_URL}/${url.shortId}`,
+      clicks: url.clicks,
+      createdAt: url.createdAt,
+    }));
 
-    return res.redirect(url.originalUrl);
-  } catch (err) {
-    console.error("REDIRECT ERROR:", err);
-    return res.status(500).send("Server error");
+    res.json(urlsWithShortUrl);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
+// DELETE URL (PROTECTED)
+router.delete("/:id", protect, async (req, res) => {
+  try {
+    const url = await Url.findById(req.params.id);
 
+    if (!url) {
+      return res.status(404).json({ error: "URL not found" });
+    }
 
+    // Check if user owns this URL
+    if (url.userId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: "Not authorized" });
+    }
+
+    await Url.findByIdAndDelete(req.params.id);
+    res.json({ message: "URL deleted successfully" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// REDIRECT SHORT URL (PUBLIC - NO AUTH REQUIRED)
+router.get("/:shortId", async (req, res) => {
+  try {
+    const { shortId } = req.params;
+
+    const url = await Url.findOne({ shortId });
+    if (!url) return res.status(404).json({ error: "Not found" });
+
+    url.clicks++;
+    await url.save();
+
+    res.redirect(url.originalUrl);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 
 export default router;
