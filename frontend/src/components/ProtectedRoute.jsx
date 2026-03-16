@@ -5,6 +5,7 @@ import { AuthContext } from "../context/AuthContext";
 function ProtectedRoute({ children }) {
   const { user, loading } = useContext(AuthContext);
 
+  // Show loading spinner while checking auth
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -13,10 +14,12 @@ function ProtectedRoute({ children }) {
     );
   }
 
+  // If user is not logged in → redirect to login
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
+  // If user exists → show the protected page
   return children;
 }
 
