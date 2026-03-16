@@ -13,25 +13,20 @@ console.log("🔗 Attempting to connect to MongoDB...");
 
 const app = express();
 
-/* ---------------- CORS CONFIG ---------------- */
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL,
-    methods: ["GET", "POST", "DELETE", "PUT"],
-    credentials: true,
-  })
-);
+/* ---------------- CORS FIX ---------------- */
+/* Allow all origins (safe for now until frontend deploy) */
+app.use(cors());
 
 /* ---------------- MIDDLEWARE ---------------- */
 app.use(express.json());
 
 /* ---------------- HEALTH CHECK ROUTE ---------------- */
-/* This helps Render know the server is running */
+/* This lets Render know the API is running */
 app.get("/", (req, res) => {
   res.send("🚀 URL Shortener API is running");
 });
 
-/* ---------------- API ROUTES ---------------- */
+/* ---------------- ROUTES ---------------- */
 app.use("/api/auth", authRoutes);
 app.use("/", urlRoutes);
 
